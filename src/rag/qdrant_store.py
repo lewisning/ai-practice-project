@@ -68,4 +68,52 @@ class QdrantStore:
             for r in res
         ]
 
+    def scroll_all_texts(self, batch: int = 512) -> List[Dict[str, Any]]:
+        """
+        Get all texts from the Qdrant collection.
+        """
+        out = []
+        next_page = None
+        while True:
+            res, next_page = self.client.scroll(
+                collection_name=settings.qdrant_collection,
+                with_payload=True,
+                with_vectors=False,
+                limit=batch,
+                offset=next_page,
+            )
+            for pt in res:
+                payload = pt.payload or {}
+                pid = payload.get("id") or str(pt.id)
+                text = payload.get("text")
+                if text:
+                    out.append({"id": pid, "text": text})
+            if next_page is None:
+                break
+        return out
+
+    def get_vectors_by_ids(self, ids: List[str]) -> Dict[str, list]:
+            """
+            Retrieve vectors by their IDs from the Qdrant collection.
+
+            :param ids: List of IDs to retrieve vectors for.
+            :return: A dictionary mapping IDs to their corresponding vectors.
+            """
+            res = self.client.retrieve(
+                collection_name=settings.qdrant_collection,
+                ids=ids,
+                with_vectors=True,
+                with_payload=False,
+            )
+            m = {}
+            for pt in res:
+                key = str(pt.id)
+                vec = pt.vector
+                if isinstance(vec, dict):
+                    vec = list(vec.values())[0]
+                m[key] = vec
+
+            return m
+
+
 qdrant_store = QdrantStore()

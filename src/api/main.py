@@ -10,6 +10,8 @@ from src.utils.settings import settings
 from src.rag.qdrant_store import qdrant_store
 from src.rag.embedding import embed_texts
 from src.api.schemas import IngestItem, SearchQuery
+from src.rag.bm25_store import bm25_store
+from src.rag.merged_retriever import search_merged
 
 logger = structlog.get_logger()
 
@@ -20,6 +22,9 @@ instrumentator.instrument(app).expose(app, endpoint="/metrics")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     qdrant_store.ensure_collection()
+    pairs = [(row["id"], row["text"]) for row in qdrant_store.scroll_all_texts()]
+    bm25_store.build(pairs)
+    logger.info("bm25_built", count=len(pairs))
     logger.info("startup_done", qdrant_host=settings.qdrant_host, qdrant_port=settings.qdrant_port)
     yield
     logger.info("shutdown_done")
@@ -45,8 +50,10 @@ def ingest(item: IngestItem):
     # Generate embedding
     vec = embed_texts([item.text])
 
-    # Upsert to Qdrant
+    # Upsert to Qdrant and add to BM25 store
     qdrant_store.upsert(ids=[pid], vectors=vec, payloads=[payload])
+    bm25_store.add(pid, item.text)
+
     return {"ok": True, "id": pid}
 
 @app.post("/search")
@@ -56,4 +63,12 @@ def search(q: SearchQuery):
     if q.product: filters["product"] = q.product
     if q.lang: filters["lang"] = q.lang
     hits = qdrant_store.search(vec[0], top_k=q.top_k, filters=filters or None)
+    return {"query": q.query, "hits": hits}
+
+@app.post("/search_merged")
+def search_v2(q: SearchQuery):
+    filters = {}
+    if q.product: filters["product"] = q.product
+    if q.lang: filters["lang"] = q.lang
+    hits = search_merged(q.query, top_k=q.top_k, filters=filters or None, alpha=0.7)
     return {"query": q.query, "hits": hits}
