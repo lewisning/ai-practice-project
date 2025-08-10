@@ -9,3 +9,9 @@ prometheus-fastapi-instrumentator==6.1.0
 openai
 numpy==1.26.4
 rank-bm25
+orjson
+pytest
+coverage
+httpx
+ruff
+black

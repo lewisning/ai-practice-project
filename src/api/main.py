@@ -12,6 +12,8 @@ from src.rag.embedding import embed_texts
 from src.api.schemas import IngestItem, SearchQuery
 from src.rag.bm25_store import bm25_store
 from src.rag.merged_retriever import search_merged
+from src.api.schemas import TicketRequest, TicketResponse
+from src.core.orchestrator import resolve_ticket
 
 logger = structlog.get_logger()
 
@@ -72,3 +74,8 @@ def search_v2(q: SearchQuery):
     if q.lang: filters["lang"] = q.lang
     hits = search_merged(q.query, top_k=q.top_k, filters=filters or None, alpha=0.7)
     return {"query": q.query, "hits": hits}
+
+@app.post("/resolve-ticket", response_model=TicketResponse)
+def resolve_ticket_api(req: TicketRequest):
+    result = resolve_ticket(req.ticket_text, top_k=req.top_k)
+    return result
