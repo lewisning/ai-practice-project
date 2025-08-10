@@ -15,3 +15,7 @@ coverage
 httpx
 ruff
 black
+pdfminer.six
+beautifulsoup4
+lxml
+python-multipart

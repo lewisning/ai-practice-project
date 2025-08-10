@@ -30,3 +30,8 @@ class TicketResponse(BaseModel):
         "escalate_to_billing_team",
         "escalate_to_support_level_2",
     ]
+
+class IngestPathRequest(BaseModel):
+    path: str
+    product: Optional[str] = "domains"
+    lang: Optional[str] = "en"

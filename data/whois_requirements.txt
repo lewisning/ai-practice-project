@@ -1,0 +1,9 @@
+WHOIS Requirements (v2.1)
+
+- Registrants must keep WHOIS contact details accurate at all times.
+- Verification emails must be completed within the specified window to avoid suspension.
+- Required fields: Registrant Name, Email, Phone, Address.
+- Changes to WHOIS should propagate within 24–48 hours.
+
+Appeals and Exceptions:
+If the registrant cannot access the original email, provide proof of ownership and request a manual verification link.

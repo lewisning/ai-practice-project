@@ -2,18 +2,19 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import structlog
 import uuid
-import numpy as np
+from fastapi import UploadFile, File
+from pathlib import Path
 
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.utils.settings import settings
 from src.rag.qdrant_store import qdrant_store
 from src.rag.embedding import embed_texts
-from src.api.schemas import IngestItem, SearchQuery
 from src.rag.bm25_store import bm25_store
 from src.rag.merged_retriever import search_merged
-from src.api.schemas import TicketRequest, TicketResponse
+from src.api.schemas import TicketRequest, TicketResponse, IngestPathRequest, IngestItem, SearchQuery
 from src.core.orchestrator import resolve_ticket
+from src.rag.file_ingest import ingest_file, ingest_folder
 
 logger = structlog.get_logger()
 
@@ -74,6 +75,28 @@ def search_v2(q: SearchQuery):
     if q.lang: filters["lang"] = q.lang
     hits = search_merged(q.query, top_k=q.top_k, filters=filters or None, alpha=0.7)
     return {"query": q.query, "hits": hits}
+
+@app.post("/ingest-file")
+async def ingest_file_api(file: UploadFile = File(...), product: str = "domains", lang: str = "en"):
+    tmp = Path("/tmp") / file.filename
+    content = await file.read()
+    tmp.write_bytes(content)
+    try:
+        res = ingest_file(tmp, product=product, lang=lang)
+        return res
+    finally:
+        try: tmp.unlink()
+        except Exception: pass
+
+@app.post("/ingest-path")
+def ingest_path_api(req: IngestPathRequest):
+    p = Path(req.path)
+    if not p.exists():
+        return {"ok": False, "error": f"path not found: {p}"}
+    if p.is_file():
+        return ingest_file(p, product=req.product or "domains", lang=req.lang or "en")
+    else:
+        return {"ok": True, "results": ingest_folder(p, product=req.product or "domains", lang=req.lang or "en")}
 
 @app.post("/resolve-ticket", response_model=TicketResponse)
 def resolve_ticket_api(req: TicketRequest):
