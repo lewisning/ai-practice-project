@@ -1,79 +1,122 @@
-# 🧠 AI Coding Challenge: Knowledge Assistant for Support Team
+# Tucows RAG Knowledge Assistant (Python 3.10 + Qdrant + OpenAI)
 
-Welcome to the AI engineering challenge! This is part of the interview process for the AI Engineer role (1–3 years experience). The goal is to design a minimal **LLM-powered RAG system** that helps a support team respond to customer tickets efficiently using relevant documentation.
+Single endpoint: `POST /resolve-ticket`
+Input a customer support ticket text and output an MCP-compliant JSON:
 
----
-
-## 📌 Problem Statement
-
-You will build a **Knowledge Assistant** that can analyze customer support queries and return structured, relevant, and helpful responses. The assistant should use a **Retrieval-Augmented Generation (RAG)** pipeline powered by an **LLM** and follow the **Model Context Protocol (MCP)** to produce structured output.
-
-### 🎯 Sample Input (Support Ticket):
-```
-My domain was suspended and I didn’t get any notice. How can I reactivate it?
-```
-### ✅ Expected Output (MCP-compliant JSON):
 ```json
 {
-  "answer": "Your domain may have been suspended due to a violation of policy or missing WHOIS information. Please update your WHOIS details and contact support.",
-  "references": ["Policy: Domain Suspension Guidelines, Section 4.2"],
-  "action_required": "escalate_to_abuse_team"
+  "answer": "...",
+  "references": ["Doc · Section · anchor-id", "..."],
+  "action_required": "..."
 }
 ```
 
-## 🔧 Requirements
-### 1.  RAG Pipeline
-- Embed sample support docs and policy FAQs (provided or synthetic).
-- Use a vector database (e.g., FAISS, Qdrant, etc.) to retrieve context based on the query.
+## ✨ Features
 
-### 2.  LLM Integration
-- Use a language model (e.g., OpenAI GPT, LLaMA2 via Ollama, Mistral, etc.)
-- Inject context and query into the prompt to generate the final answer.
+* Multi-retrieval: Vector search (Qdrant, cosine) + BM25 fallback → fusion reranking
+* Citation tracking: Returns snippet references as `Doc · Section · anchor-id`
+* Compliance: Strict JSON (Pydantic validation + retry)
+* Action routing: Rule-based classification (e.g., suspension/abuse → `escalate_to_abuse_team`)
+* Engineering quality: Docker Compose, `/metrics` endpoint
 
-### 3.  MCP (Model Context Protocol)
-- Prompt should have clearly defined role, context, task, and output schema.
-- Output must be valid JSON in the following format:
-  ```json
-  {
-    "answer": "...",
-    "references": [...],
-    "action_required": "..."
-  }
-  ```
-### 4.  API Endpoint
-- Expose a single endpoint: POST /resolve-ticket
-- Input: { "ticket_text": "..." }
-- Output: structured JSON response as shown above
+## 🧱 Tech Stack
 
-## 📂 Suggested Tech Stack (Use what you're comfortable with)
-- Languages: Python or Go
-- Embedding Models: Sentence Transformers / OpenAI / HuggingFace
-- Vector Store: FAISS, Qdrant, Weaviate, etc.
-- LLMs: OpenAI, Ollama, Local LLM, or APIs
-- API: FastAPI (Python), Gin/Fiber (Go)
-- Docker Compose
+Python 3.10, FastAPI, Qdrant, OpenAI Embeddings + Chat, rank-bm25, structlog, pytest
 
-## 📝 Scoring Criteria (Total: 100 Points)
+## 🚀 Quick Start
 
-| Criteria                     | Description                                                                 | Points |
-|------------------------------|-----------------------------------------------------------------------------|--------|
-| Correctness & Functionality | Does the assistant generate accurate and relevant responses?                 | 35     |
-| RAG Architecture           | Is the retrieval pipeline well-structured, efficient, and properly integrated? | 20     |
-| Prompt Design (MCP)        | Is the prompt construction clear, structured, and aligned with MCP principles? | 15     |
-| Code Quality & Modularity | Is the code clean, readable, modular, and maintainable and covered with unit tests?                      | 20     |
-| Documentation             | Is the `README.md` clear, with setup instructions and design explanation?    | 10     |
-|                             | **Total**                                                                   | **100** |
+### 1) Prepare Environment Variables
 
-## 🚀 Getting Started
-- Fork this repository (do not clone directly)
-- Work within your forked copy
-- Add your code in /src and include a clear README.md with setup instructions
-- Commit your changes regularly
-- Once complete, follow the submission instructions below
+Copy `.env.example` to `.env` and fill in your API keys:
 
-## 📬 Submission Instructions
-- You have 1 week to complete the challenge.
-- We expect this to take around 1–2 focused days of work.
-- Once complete:
-  - Push your forked repo to GitHub
-  - Submit the repository link through the portal in the original email.
+```bash
+cp .env.example .env
+```
+
+### 2) Launch with Docker Compose
+
+```bash
+docker compose up -d --build
+```
+
+* API: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+* Metrics: [http://127.0.0.1:8000/metrics](http://127.0.0.1:8000/metrics)
+* Qdrant: [http://127.0.0.1:6333/collections](http://127.0.0.1:6333/collections)
+
+### 3) Demo
+
+```bash
+# Instantly ingest single sample document data
+curl -s -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"doc":"Policy: Domain Suspension Guidelines","section":"4.2","anchor_id":"para-17","text":"A domain may be suspended due to invalid WHOIS information. To reactivate, update WHOIS and provide proof of registrant identity.","product":"domains","lang":"en"}'
+curl -s -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"doc":"WHOIS Requirements","section":"2.1","anchor_id":"para-05","text":"Registrants must keep WHOIS contact details accurate. Verification emails must be completed within the specified window to avoid suspension.","product":"domains","lang":"en"}'
+
+# Ingest single document with file upload
+curl -s -X POST http://127.0.0.1:8000/ingest-file -F "file=@data/your_file" -F "product=domains" -F "lang=en" | jq
+
+# Ingest multiple documents from a directory
+curl -s -X POST http://127.0.0.1:8000/ingest-path -H "Content-Type: application/json" -d '{"path":"/app/data","product":"domains","lang":"en"}' | jq
+
+# Merged search with BM25 + Qdrant vector search
+curl -s -X POST http://127.0.0.1:8000/search_merged -H "Content-Type: application/json" -d '{"query":"reactivate a suspended domain due to invalid WHOIS","top_k":5,"product":"domains","lang":"en"}' | jq
+
+# End-to-end MCP-compliant answer
+curl -s -X POST http://127.0.0.1:8000/resolve-ticket -H "Content-Type: application/json" -d '{"ticket_text":"My domain was suspended and I didn’t get any notice. How can I reactivate it?","top_k":8}' | jq
+```
+
+## 🥪 Testing
+
+```bash
+pytest -q
+# or with coverage
+coverage run -m pytest -q && coverage report -m
+```
+
+## ⚙️ Configuration & Parameters
+
+* `.env`:
+
+  * `OPENAI_API_KEY`: Your OpenAI key
+  * `OPENAI_GPT_NAME`: 'gpt-4o-mini' or your preferred model
+  * `EMBEDDING_MODEL`: `text-embedding-3-small` (1536 dimensions)
+  * `QDRANT_HOST/PORT/COLLECTION`: defaults to `qdrant:6333 / kb_chunks`
+* Key parameters: `VECTOR_TOPK=30`, `BM25_TOPK=20`, `MAX_CTX_SNIPPETS=8`, `alpha=0.7`
+
+## 🧩 Architecture Overview
+
+```
+Ticket --> /resolve-ticket --> Orchestrator
+   |                                |
+   |                         search_merged()
+   |                         ---- semantic (Qdrant)
+   |                         ---- BM25 (in-memory)
+   |                         --> score fusion --> top snippets
+   |                                |
+   |                       MCP Prompt (system + schema + context)
+   |                                |
+   |                      OpenAI Chat (json only)
+   |                                |
+   |                   Pydantic validate + action rules
+   v
+{answer, references, action_required}
+```
+
+## 📙 Adding Knowledge Base Documents
+
+Place Markdown/HTML/PDF files in `data/` and run your ingest pipeline. For example:
+
+* Use `/ingest` API for quick additions
+* Use `/ingest-file` for single file uploads
+* Use `/ingest-path` to ingest all files in `/data` directory
+
+## 🩹 Troubleshooting
+
+* `OpenAIError: api_key ...`: Ensure `.env` is loaded into the container via `env_file`
+* `proxies` error: Remove `OPENAI_*_PROXY` and use standard `HTTPS_PROXY/HTTP_PROXY` instead
+* `/qdrant/health` returns false: Check port 6333, network connectivity, and Docker Compose dependencies
+* Embedding dimension mismatch: `EMBEDDING_DIM` must match model dimensions (small=1536, large=3072)
+
+## Author
+
+Developed and maintained by [Xuyang (Lewis) Ning](https://github.com/lewisning)
+
+---
